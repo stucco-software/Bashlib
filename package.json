@@ -21,8 +21,9 @@
   "license": "ISC",
   "dependencies": {
     "@comunica/query-sparql": "^2.1.0",
-    "@inrupt/solid-client": "1.26.0",
-    "@inrupt/solid-client-authn-node": "^1.14.0",
+    "@inrupt/solid-client": "^2.1.2",
+    "@inrupt/solid-client-authn-core": "^2.5.0",
+    "@inrupt/solid-client-authn-node": "^2.5.0",
     "chalk": "^4.1.2",
     "cli-columns": "^4.0.0",
     "cli-select": "^1.1.2",
@@ -33,7 +34,7 @@
     "form-urlencoded": "^6.0.6",
     "http-link-header": "^1.0.4",
     "inquirer": "^8.2.4",
-    "jose": "^4.7.0",
+    "jose": "^5.10.0",
     "jwt-decode": "^3.1.2",
     "md5": "^2.3.0",
     "mime-types": "^2.1.35",
@@ -44,9 +45,13 @@
     "@types/express": "^5.0.1",
     "@types/inquirer": "^8.2.1",
     "@types/mime-types": "^2.1.4",
+    "@types/node": "^24.19.2",
     "live-server": "^1.2.2",
     "release-it": "^15.5.0",
-    "typedoc": "^0.23.27",
-    "typescript": "^4.9.3"
+    "typedoc": "^0.28.20",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

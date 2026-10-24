@@ -11,7 +11,7 @@ const Table = require('cli-table');
 export default class PermsCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
 
     
     const access = program

@@ -44,7 +44,7 @@ export default async function authenticateInteractive(options: IInteractiveAuthO
         var tokenTimeLeftInSeconds = (sessionInfo.expirationDate.getTime() - new Date().getTime()) / 1000;
         if (tokenTimeLeftInSeconds > 60) {
           // Only reuse previous session tokens if we have enough time to work with, else continue to create a new access token.
-          let fetch = await buildAuthenticatedFetch(crossfetch, sessionInfo.accessToken, { dpopKey: sessionInfo.dpopKey });
+          let fetch = await buildAuthenticatedFetch(sessionInfo.accessToken, { dpopKey: sessionInfo.dpopKey });
           let webId = sessionInfo.webId;
           // fetch = await wrapFetchRefresh(fetch, sessionInfo.expirationDate, webId as string, options.idp as string, appName, port) as any;
           return { fetch, webId }
@@ -137,7 +137,7 @@ async function createFetchWithNewAccessToken(oidcIssuer: string, appName: string
         
         // Store the session info
         storeSessionTokenInfo(accessToken, dpopKey, expirationDate, webId, oidcIssuer)
-        let fetch = await buildAuthenticatedFetch(crossfetch, accessToken, { dpopKey });
+        let fetch = await buildAuthenticatedFetch(accessToken, { dpopKey });
 
         // Set the current WebID to the current session
         await setConfigCurrentWebID(webId)

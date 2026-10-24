@@ -7,7 +7,7 @@ import { writeErrorString } from '../../../utils/authenticationUtils';
 export default class CreatePodCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
     
     program
       .command('create-pod')

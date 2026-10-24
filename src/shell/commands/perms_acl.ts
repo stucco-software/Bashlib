@@ -10,7 +10,7 @@ const Table = require('cli-table');
 export default class PermsCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
 
     program
       .command('chmod')
@@ -26,7 +26,7 @@ export default class PermsCommand extends SolidCommand {
       `)
       .option('-p, --pretty', 'Pretty format')
       .option('-v, --verbose', 'Log all operations') // Should this be default?
-      .action(this.executeCommand)
+      .action(this.executeCommand.bind(this))
     
     program
       .command('perms')
@@ -42,7 +42,7 @@ export default class PermsCommand extends SolidCommand {
       `)
       .option('-p, --pretty', 'Pretty format')
       .option('-v, --verbose', 'Log all operations') // Should this be default?
-      .action(this.executeCommand)
+      .action(this.executeCommand.bind(this))
 
     return program
   }

@@ -16,7 +16,7 @@ const Table = require('cli-table');
 
 export default class AuthCommand extends SolidCommand { 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
 
     let authcommand = program.command('auth').description('Manage authentication options for Bashlib.')
 

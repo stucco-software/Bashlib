@@ -80,18 +80,22 @@ export default async function authenticate(options: ILoginOptions): Promise<{ fe
 
 }
 
-async function queryUserAuthentication() { 
+async function queryUserAuthentication() {
+  // Without a terminal (scripts, CI, pipes) there is nobody to answer: continue unauthenticated
+  // instead of crashing on setRawMode. Use --auth token for authenticated non-interactive runs.
+  if (!process.stdin.isTTY) {
+    console.error('No terminal available to ask about logging in; continuing unauthenticated (use --auth token or --auth interactive).');
+    return false;
+  }
   // Ask the user if they want to authenticate. If not, use cross-fetch, else give them a prompt to provide an idp
   console.log(`Do you want to authenticate the current request? [Y, n] `);
-  let userWantsToAuthenticate : boolean = await new Promise((resolve, reject) => {
+  let userWantsToAuthenticate : boolean = await new Promise((resolve) => {
     process.stdin.setRawMode(true);
     process.stdin.resume();
-    process.stdin.on('data', (chk) => {
-      if (chk.toString('utf8') === "n") {
-        resolve(false);
-      } else {
-        resolve(true);
-      }
+    process.stdin.once('data', (chk) => {
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      resolve(chk.toString('utf8').toLowerCase() !== "n");
     });
   });
   return userWantsToAuthenticate

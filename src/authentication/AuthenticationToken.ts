@@ -19,7 +19,7 @@ export async function authenticateWithTokenFromJavascript(token: { id: string, s
 
   let { accessToken, expirationDate, webId } = await requestAccessToken(id, secret, dpopKey, { idp });
 
-  let fetch = await buildAuthenticatedFetch(crossfetch, accessToken, { dpopKey });
+  let fetch = await buildAuthenticatedFetch(accessToken, { dpopKey });
 
   return { fetch, webId }
 }
@@ -36,7 +36,7 @@ export async function authenticateToken(options?: IClientCredentialsTokenAuthOpt
         var tokenTimeLeftInSeconds = (sessionInfo.expirationDate.getTime() - new Date().getTime()) / 1000;
         if (tokenTimeLeftInSeconds > 60) {
           // Only reuse previous session tokens if we have enough time to work with, else continue to create a new access token.
-          let fetch = await buildAuthenticatedFetch(crossfetch, sessionInfo.accessToken, { dpopKey: sessionInfo.dpopKey });
+          let fetch = await buildAuthenticatedFetch(sessionInfo.accessToken, { dpopKey: sessionInfo.dpopKey });
           let webId = sessionInfo.webId;
           return { fetch, webId }
         }
@@ -71,7 +71,7 @@ async function createFetchWithNewAccessToken(options?: IClientCredentialsTokenAu
   let { accessToken, expirationDate, webId } = await requestAccessToken(id, secret, dpopKey, options);
 
   await storeSessionTokenInfo(accessToken, dpopKey, expirationDate, webId, idp)
-  let fetch = await buildAuthenticatedFetch(crossfetch, accessToken, { dpopKey });
+  let fetch = await buildAuthenticatedFetch(accessToken, { dpopKey });
 
   return { fetch, webId }
 }

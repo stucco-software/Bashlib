@@ -8,7 +8,7 @@ import SolidCommand from './SolidCommand';
 export default class RemoveCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
     
     program
       .command('rm')
@@ -16,7 +16,7 @@ export default class RemoveCommand extends SolidCommand {
       .argument('<urls...>', 'URL of container to be listed')
       .option('-r, --recursive', 'Recursively removes all files in given container (.acl files are removed on resource removal)') // Should this be default?
       .option('-v, --verbose', 'Log all operations') // Should this be default?
-      .action(this.executeCommand)
+      .action(this.executeCommand.bind(this))
 
     return program
   }

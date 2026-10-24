@@ -8,7 +8,7 @@ import SolidCommand from './SolidCommand';
 export default class MkdirCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
     
     program
       .command('mkdir')

@@ -9,7 +9,7 @@ import SolidCommand from './SolidCommand';
 export default class FindCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
   
     program
       .command('find')

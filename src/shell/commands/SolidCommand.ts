@@ -3,7 +3,9 @@ import { Command } from 'commander';
 export default abstract class SolidCommand { 
   shell?: SolidShell;
   mayExit: boolean;
-  programopts?: any;
+  program?: Command;
+  // Read global options lazily: they only exist after commander has parsed argv.
+  get programopts(): any { return this.program?.opts() ?? {}; }
   mayUseCurrentContainer: boolean;
 
   constructor(shell?: SolidShell, mayExit = false, mayUseCurrentContainer = false) { 

@@ -203,7 +203,9 @@ async function fixKeyPairType(key: any) : Promise<KeyPair> {
     publicKey: publicKeyJWK
   };
   dpopKey.publicKey.alg = JWTALG;
-  return dpopKey;
+  if (!dpopKey.publicKey.kty) throw new Error('Cannot restore session keys: public key has no kty');
+  // jose's JWK marks kty optional; solid-client-authn-core's KeyPair requires it (checked above).
+  return dpopKey as KeyPair;
 
 }
 

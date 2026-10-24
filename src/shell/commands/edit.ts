@@ -12,7 +12,7 @@ var editor = process.env.EDITOR || 'vi';
 export default class EditCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
   
     program
       .command('edit')

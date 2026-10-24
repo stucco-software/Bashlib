@@ -4,7 +4,7 @@ import SolidCommand from './SolidCommand';
 export default class ExitCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
     
     program
       .command('exit')

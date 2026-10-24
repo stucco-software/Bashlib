@@ -8,7 +8,7 @@ import SolidCommand from './SolidCommand';
 export default class MkdirCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
    
     program
       .command('mv')
@@ -20,7 +20,7 @@ export default class MkdirCommand extends SolidCommand {
       .option('-o, --override', 'Automatically override existing files')
       .option('-n, --never-override', 'Automatically override existing files')
       .option('-v, --verbose', 'Log all operations')
-      .action(this.executeCommand)
+      .action(this.executeCommand.bind(this))
     
     return program
   }

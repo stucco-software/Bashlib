@@ -8,7 +8,7 @@ import SolidCommand from './SolidCommand';
 export default class CopyCommand extends SolidCommand { 
 
   public addCommand(program: Command) {
-    this.programopts = program.opts();
+    this.program = program;
 
     program
       .command('cp')
@@ -21,7 +21,7 @@ export default class CopyCommand extends SolidCommand {
       .option('-n, --never-override', 'Automatically override existing files')
       .option('-v, --verbose', 'Log all read and write operations')
       .option('-c, --compare-last-modified', 'Skip targets with newer "last-modified" status')
-      .action(this.executeCommand)
+      .action(this.executeCommand.bind(this))
     
     return program
   }
