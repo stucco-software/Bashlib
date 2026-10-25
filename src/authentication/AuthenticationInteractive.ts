@@ -1,5 +1,7 @@
 import { getOIDCConfig, getSessionInfoFromStorage, StorageHandler, OIDCConfig, readSessionTokenInfo, storeSessionTokenInfo, decodeIdToken, writeErrorString } from '../utils/authenticationUtils';
-import { generateDpopKeyPair, KeyPair, createDpopHeader, buildAuthenticatedFetch } from '@inrupt/solid-client-authn-core';
+import { isSessionTokenAlive } from '../utils/storages';
+import { generateDpopKeyPair, KeyPair, createDpopHeader } from '@inrupt/solid-client-authn-core';
+import { buildDpopAuthenticatedFetch } from '../utils/dpopFetch';
 import formurlencoded from 'form-urlencoded';
 import { Session } from '@inrupt/solid-client-authn-node';
 import open from 'open';
@@ -44,10 +46,16 @@ export default async function authenticateInteractive(options: IInteractiveAuthO
         var tokenTimeLeftInSeconds = (sessionInfo.expirationDate.getTime() - new Date().getTime()) / 1000;
         if (tokenTimeLeftInSeconds > 60) {
           // Only reuse previous session tokens if we have enough time to work with, else continue to create a new access token.
-          let fetch = await buildAuthenticatedFetch(sessionInfo.accessToken, { dpopKey: sessionInfo.dpopKey });
-          let webId = sessionInfo.webId;
-          // fetch = await wrapFetchRefresh(fetch, sessionInfo.expirationDate, webId as string, options.idp as string, appName, port) as any;
-          return { fetch, webId }
+          let fetch = await buildDpopAuthenticatedFetch(sessionInfo.accessToken, sessionInfo.dpopKey);
+          // Verify the stored token is still accepted by the IdP; a locally
+          // unexpired token can still have been invalidated server-side.
+          if (await isSessionTokenAlive(fetch, sessionInfo.idp, sessionInfo.webId, options.logger)) {
+            let webId = sessionInfo.webId;
+            return { fetch, webId }
+          }
+          // Stale token: drop the stored session and create a new one.
+          let staleWebId = getConfigCurrentWebID();
+          if (staleWebId) { removeConfigSession(staleWebId) }
         } else { 
           // remove timed out session
           let webId = getConfigCurrentWebID();
@@ -63,18 +71,24 @@ export default async function authenticateInteractive(options: IInteractiveAuthO
   // Check for available IDP. If not, require one from the user.
   if (!options.idp) { 
     if (currentSession && currentSession.idp) {
-      console.log(`Continue authenticating with ${chalk.bold(currentSession.idp)} ? [Y/n] `);
-      options.idp = await new Promise((resolve, reject) => {
-        process.stdin.setRawMode(true);
-        process.stdin.resume();
-        process.stdin.on('data', (chk) => {
-          if (chk.toString('utf8') === "n") {
-            resolve(undefined);
-          } else {
-            resolve((currentSession as ISessionEntry).idp);
-          }
+      if (process.stdin.isTTY) {
+        console.log(`Continue authenticating with ${chalk.bold(currentSession.idp)} ? [Y/n] `);
+        options.idp = await new Promise((resolve, reject) => {
+          process.stdin.setRawMode(true);
+          process.stdin.resume();
+          process.stdin.on('data', (chk) => {
+            if (chk.toString('utf8') === "n") {
+              resolve(undefined);
+            } else {
+              resolve((currentSession as ISessionEntry).idp);
+            }
+          });
         });
-      });
+      } else {
+        // Without a terminal there is nobody to answer: continue with the known IdP.
+        console.log(`Continuing with ${chalk.bold(currentSession.idp)}.`);
+        options.idp = currentSession.idp;
+      }
     }
   }
 
@@ -84,8 +98,9 @@ export default async function authenticateInteractive(options: IInteractiveAuthO
   try {
     return await createFetchWithNewAccessToken(options.idp, appName, port)
   } catch (e) {
-    if (options?.verbose) writeErrorString('Error creating new session', e, options);
-    return { fetch: crossfetch }
+    // The user went through a browser login; never hide why it failed.
+    writeErrorString('Error creating new session', e, options);
+    throw e
   }
   
 
@@ -101,8 +116,13 @@ export default async function authenticateInteractive(options: IInteractiveAuthO
  */
 async function createFetchWithNewAccessToken(oidcIssuer: string, appName: string, port: number) : Promise<SessionInfo> {
   return new Promise( async (resolve, reject) => {
-    const config = await getOIDCConfig(oidcIssuer);
-    if (!config) reject(new Error("Could not read oidc config"));
+    let config;
+    try {
+      config = await getOIDCConfig(oidcIssuer);
+    } catch (e) {
+      return reject(e)
+    }
+    if (!config) return reject(new Error("Could not read oidc config"));
 
     const app = express();
     const redirectUrl = `http://localhost:${port}/`;
@@ -125,8 +145,15 @@ async function createFetchWithNewAccessToken(oidcIssuer: string, appName: string
       try {
         await session.login(loginOptions)
       } catch (e) {
+        server.close();
         reject (e)
       }
+    });
+
+    // Without this, a port conflict (e.g. a leftover process from a previous
+    // login attempt) crashes the process with an unhandled 'error' event.
+    server.on('error', (e: Error) => {
+      reject(new Error(`Could not listen on port ${port} for the authentication redirect: ${e.message}`))
     });
     
     app.get("/", async (_req: any, res: any) => {
@@ -136,17 +163,24 @@ async function createFetchWithNewAccessToken(oidcIssuer: string, appName: string
         let { accessToken, expirationDate, dpopKey, webId } = await handleIncomingRedirect(oidcIssuer, redirectUrl, code, storage)
         
         // Store the session info
-        storeSessionTokenInfo(accessToken, dpopKey, expirationDate, webId, oidcIssuer)
-        let fetch = await buildAuthenticatedFetch(accessToken, { dpopKey });
+        await storeSessionTokenInfo(accessToken, dpopKey, expirationDate, webId, oidcIssuer)
+        let fetch = await buildDpopAuthenticatedFetch(accessToken, dpopKey);
 
         // Set the current WebID to the current session
         await setConfigCurrentWebID(webId)
+
+        // Always answer the browser: otherwise the request hangs until this
+        // process exits, which browsers report as "Unable to connect".
+        res.status(200).send('Authentication successful. You can close this window and return to the terminal.')
         server.close();
         resolve({
           fetch, webId
         })
       } catch (e) {
-        reject(new Error('Error authenticating with received token. Please double check your system clock is synced correctly.'))
+        let message = (e instanceof Error) ? e.message : String(e);
+        res.status(500).send(`Authentication failed: ${message} You can close this window and return to the terminal.`)
+        server.close();
+        reject(new Error(`Error authenticating with received token: ${message}`))
       }
     });
   })
@@ -166,7 +200,9 @@ export async function handleIncomingRedirect(idp: string, redirectUrl: string, c
   let config = await getOIDCConfig(idp)
   let dpopKey = await generateDpopKeyPair();
   let sessionInfo = await getSessionInfoFromStorage(storage);
-  if (!sessionInfo || !sessionInfo.clientId || !sessionInfo.clientSecret || !(sessionInfo as any).codeVerifier)
+  // clientSecret is absent for public clients (IdPs registering with
+  // token_endpoint_auth_method "none"); those authenticate through PKCE only.
+  if (!sessionInfo || !sessionInfo.clientId || !(sessionInfo as any).codeVerifier)
     throw new BashlibError(BashlibErrorMessage.cannotCreateSession)
 
   return await requestAccessToken({
@@ -187,30 +223,35 @@ async function requestAccessToken(p: {
       code: string, 
       codeVerifier: string, 
       clientId: string, 
-      clientSecret: string, 
+      clientSecret?: string, 
       redirectUrl: string
       config: OIDCConfig
     }) : Promise<{ accessToken: string, expirationDate: Date, dpopKey: KeyPair, webId: string }>
   {
 
- 
-  const authString = `${encodeURIComponent(p.clientId)}:${encodeURIComponent(p.clientSecret)}`;
-
-  const response = await fetch(p.config.token_endpoint, {
-    method: 'POST',
-    headers: {
-      authorization: `Basic ${Buffer.from(authString).toString('base64')}`,
+    // Public clients (no client secret) authenticate through PKCE
+    // (client_id + code_verifier in the body) and must not send an
+    // Authorization header: some IdPs reject the request outright if they do.
+    const headers: Record<string, string> = {
       'content-type': 'application/x-www-form-urlencoded',
       dpop: await createDpopHeader(p.config.token_endpoint, 'POST', p.dpopKey),
-    },
-    body: formurlencoded({
-      grant_type: 'authorization_code',
-      redirect_uri: p.redirectUrl,
-      code: p.code,
-      code_verifier: p.codeVerifier,
-      client_id: p.clientId,
-    }),
-  });
+    };
+    if (p.clientSecret) {
+      const authString = `${encodeURIComponent(p.clientId)}:${encodeURIComponent(p.clientSecret)}`;
+      headers['authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
+    }
+
+    const response = await fetch(p.config.token_endpoint, {
+      method: 'POST',
+      headers,
+      body: formurlencoded({
+        grant_type: 'authorization_code',
+        redirect_uri: p.redirectUrl,
+        code: p.code,
+        code_verifier: p.codeVerifier,
+        client_id: p.clientId,
+      }),
+    });
 
   let json = await response.json()
   if (json.error) {

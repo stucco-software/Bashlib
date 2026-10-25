@@ -177,7 +177,7 @@ function fillProgram(shell: SolidShell, programopts: any) {
     .option('-s, --sessionStorage <string>', '(auth: token | interactive) Location of file storing session information. Defaults to ~/.solid/.session-info-<auth>')
     .option('-c, --config <string>', '(auth: any) Location of config file with authentication info.')
     .option('--silent', 'Silence authentication errors')
-    .option('--port', 'Specify port to be used when redirecting in Solid authentication flow. Defaults to 3435.')
+    .option('--port <number>', 'Specify port to be used when redirecting in Solid authentication flow. Defaults to 3435.', (v: string) => parseInt(v, 10))
   
 
   program

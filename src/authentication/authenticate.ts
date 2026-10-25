@@ -1,5 +1,6 @@
 import SolidFetchBuilder from './CreateFetch';
 import { getWebIDIdentityProvider, writeErrorString } from '../utils/util';
+import { getTrackedStorageRoots } from '../utils/storages';
 import inquirer from 'inquirer';
 import { getConfigCurrentWebID, getConfigCurrentToken } from '../utils/configoptions';
 import type { Logger } from '../logger';
@@ -75,6 +76,15 @@ export default async function authenticate(options: ILoginOptions): Promise<{ fe
     console.error('Continuing unauthenticated')
     return { fetch: crossfetch }
   } else {
+    // Track the storage root(s) of the authenticated WebID so commands can
+    // expand `~` and pod-relative paths without re-discovering them every run.
+    if (sessionInfo.webId) {
+      try {
+        await getTrackedStorageRoots(sessionInfo.webId, sessionInfo.fetch)
+      } catch (e) {
+        if (options.verbose) writeErrorString('Could not track storage roots for WebID', e, options);
+      }
+    }
     return sessionInfo
   }
 

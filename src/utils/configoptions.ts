@@ -13,6 +13,7 @@ export type IConfig = {
 export type IAuthInfoEntry = {
   token?: ITokenEntry,
   session?: ISessionEntry,
+  storages?: string[], // Storage roots (pim:storage) discovered for this WebID.
 }
 
 export type ITokenEntry = {
@@ -144,7 +145,7 @@ export function getConfigCurrentSession() {
   let config : IConfig = JSON.parse(fs.readFileSync(BASHLIBCONFIGPATH, { encoding: "utf8" }));
   let webId = config.currentWebID
   if (!webId) return null;
-  return config.authInfo[webId].session
+  return config.authInfo[webId]?.session
 }
 
 export function getConfigCurrentToken() {
@@ -154,13 +155,35 @@ export function getConfigCurrentToken() {
   return config.authInfo[webId]?.token 
 }
 
-export function getAllConfigEntries() { 
-  let info: Record<string, { hasToken: boolean, session?: { id?: string, idp?: string, expirationDate?: Date } }> = {}
+export function setConfigStorages(webId: string, storages: string[]) {
+  try {
+    let config = loadConfig()
+    if (!config.authInfo[webId]) config.authInfo[webId] = {}
+    config.authInfo[webId].storages = storages
+    fs.writeFileSync(BASHLIBCONFIGPATH, JSON.stringify(config, null, 2))
+  }
+  catch (e) { 
+    throw new Error('Could not read config.')
+  }
+}
+
+// Storage roots tracked for a WebID. Defaults to the currently set WebID.
+export function getConfigStorages(webId?: string): string[] | undefined {
+  let config : IConfig = JSON.parse(fs.readFileSync(BASHLIBCONFIGPATH, { encoding: "utf8" }));
+  let targetWebId = webId || config.currentWebID
+  if (!targetWebId) return undefined;
+  let storages = config.authInfo[targetWebId]?.storages
+  return storages && storages.length > 0 ? storages : undefined
+}
+
+export function getAllConfigEntries() {
+  let info: Record<string, { hasToken: boolean, storages?: string[], session?: { id?: string, idp?: string, expirationDate?: Date } }> = {}
   try {
     let config = loadConfig()
     for (let webId of Object.keys(config.authInfo)) { 
       info[webId] = {
         hasToken: !!config.authInfo[webId].token,
+        storages: config.authInfo[webId].storages,
         session: config.authInfo[webId].session && {
           id: config.authInfo[webId].session?.id,
           idp: config.authInfo[webId].session?.idp,
@@ -175,11 +198,14 @@ export function getAllConfigEntries() {
   return info
 }
 
+// Removes the interactive session for a WebID, keeping any stored client credentials token.
 export function removeConfigSession(webId: string) {
   try {
     let config : IConfig = JSON.parse(fs.readFileSync(BASHLIBCONFIGPATH, { encoding: "utf8" }));
-    delete config.authInfo[webId];
-    fs.writeFileSync(BASHLIBCONFIGPATH, JSON.stringify(config, null, 2))
+    if (config.authInfo[webId]) {
+      delete config.authInfo[webId].session;
+      fs.writeFileSync(BASHLIBCONFIGPATH, JSON.stringify(config, null, 2))
+    }
   }
   catch (e) { 
     throw new Error('Could not read config.')

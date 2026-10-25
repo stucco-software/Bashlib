@@ -1,4 +1,5 @@
 import { getInbox, getPodRoot, writeErrorString } from './util';
+import { expandStoragePath, getTrackedStorageRoots } from './storages';
 import { SolidShell } from '../commands/solid-shell';
 
 export function arrayifyHeaders(value: any, previous: any) { return previous ? previous.concat(value) : [value] }
@@ -56,17 +57,23 @@ export async function changeUrlPrefixes(authenticationInfo: any, url: string) {
     if (!authenticationInfo.webId) throw new Error('Cannot process URL with "webid:" prefix, no WebID value currently known.')
     return authenticationInfo.webId as string
 
+  } else if (url === '~' || url.startsWith('~/')) {
+    // Expand ~ to the tracked storage root of the current WebID.
+    return expandStoragePath(url, authenticationInfo.webId, authenticationInfo.fetch)
+
   } else if (url.startsWith('root:')) {
     if (!authenticationInfo.webId) throw new Error('Cannot process URL with "root:" prefix, no WebID value currently known.')
-    let podRoot = await getPodRoot(authenticationInfo.webId, authenticationInfo.fetch);
+    let podRoot = (await getTrackedStorageRoots(authenticationInfo.webId, authenticationInfo.fetch))?.[0]
+      || await getPodRoot(authenticationInfo.webId, authenticationInfo.fetch);
     if (!podRoot) throw new Error('No pod root container found')
     return mergeStringsSingleSlash(podRoot, url.replace('root:', '')) 
 
   } else if (url.startsWith('base:')) {
     if (!authenticationInfo.webId) throw new Error('Cannot process URL with "base:" prefix, no WebID value currently known.')
-    let podRoot = await getPodRoot(authenticationInfo.webId, authenticationInfo.fetch);
+    let podRoot = (await getTrackedStorageRoots(authenticationInfo.webId, authenticationInfo.fetch))?.[0]
+      || await getPodRoot(authenticationInfo.webId, authenticationInfo.fetch);
     if (!podRoot) throw new Error('No pod root container found')
-    return mergeStringsSingleSlash(podRoot, url.replace('base:', '')) 
+    return mergeStringsSingleSlash(podRoot, url.replace('base:', ''))
     
   } else if (url.startsWith('inbox:')) {
     if (!authenticationInfo.webId) throw new Error('Cannot process URL with "inbox:" prefix, no WebID value currently known.')

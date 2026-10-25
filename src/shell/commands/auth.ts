@@ -11,6 +11,9 @@ import { getWebIDIdentityProvider, writeErrorString } from '../../utils/util';
 import { generateDpopKeyPair } from '@inrupt/solid-client-authn-core';
 import { requestAccessToken } from '../../authentication/AuthenticationToken';
 import { getSolidDataset, getThing } from '@inrupt/solid-client';
+import authenticate from '../../authentication/authenticate';
+import { getTrackedStorageRoots } from '../../utils/storages';
+import { addEnvOptions } from '../../utils/shellutils';
 const Table = require('cli-table');
 
 
@@ -137,14 +140,15 @@ async function showAuthenticationOption(options: any) {
       chalk.cyan("WebID"),
       "has auth token",
       "has active session",
+      "storage roots",
     ]
     let table = new Table({ head });
 
     let entries = getAllConfigEntries();
     for (let webId of Object.keys(entries)) {
-      let activeSession = entries[webId]?.session
       if (webId === currentWebId) table.push([colorWebID(webId), entries[webId].hasToken, 
-        !!activeSession && !! activeSession.expirationDate && activeSession.expirationDate > new Date()])
+        !!entries[webId]?.session && !! entries[webId].session?.expirationDate && new Date(entries[webId].session.expirationDate as any) > new Date(),
+        entries[webId].storages?.join('\n') || ""])
     }
     console.log(`
 Stored authentication data:
@@ -154,12 +158,14 @@ ${table.toString()}`
     let entries = getAllConfigEntries();
     for (let webId of Object.keys(entries)) {
       let activeSession = entries[webId]?.session
-      if (webId === currentWebId) console.log(
-        colorWebID(webId),
-        entries[webId].hasToken ? `- ${chalk('auth token')}` : "",
-        !!activeSession && !! activeSession.expirationDate && 
-          activeSession.expirationDate > new Date() ? `- ${chalk('active session')}` : ""
-      )
+      if (webId === currentWebId) {
+        console.log(colorWebID(webId),
+          entries[webId].hasToken ? `- ${chalk.bold('auth token')}` : "",
+          !!activeSession && !! activeSession.expirationDate && 
+            activeSession.expirationDate > new Date() ? `- ${chalk.bold('active session')}` : ""
+        )
+        for (let storage of entries[webId].storages || []) console.log(`  storage: ${storage}`)
+      }
     }
   }
   
@@ -171,6 +177,7 @@ async function listAuthenticationOptions(options: any) {
       chalk.cyan.bold("WebID"),
       "has auth token",
       "has active session",
+      "storage roots",
     ]
     let table = new Table({ head });
 
@@ -178,7 +185,8 @@ async function listAuthenticationOptions(options: any) {
     for (let webId of Object.keys(entries)) {
       let activeSession = entries[webId]?.session
       table.push([colorWebID(webId), entries[webId].hasToken, 
-        !!activeSession && !! activeSession.expirationDate && activeSession.expirationDate > new Date()])
+        !!activeSession && !! activeSession.expirationDate && activeSession.expirationDate > new Date(),
+        entries[webId].storages?.join('\n') || ""])
     }
     console.log(`
 Stored authentication data:
@@ -190,10 +198,11 @@ ${table.toString()}`
       let activeSession = entries[webId]?.session
       console.log(
         colorWebID(webId),
-        entries[webId].hasToken ? `- ${chalk('auth token')}` : "",
+        entries[webId].hasToken ? `- ${chalk.bold('auth token')}` : "",
         !!activeSession && !! activeSession.expirationDate && 
-          activeSession.expirationDate > new Date() ? `- ${chalk('active session')}` : ""
+          activeSession.expirationDate > new Date() ? `- ${chalk.bold('active session')}` : ""
       )
+      for (let storage of entries[webId].storages || []) console.log(`  storage: ${storage}`)
     }
   }
 }
@@ -203,17 +212,16 @@ async function setAuthenticationOption(options: any) {
   if (webId) {  
     await setConfigCurrentWebID(webId)
     addConfigEmtpyEntry(webId)
-    console.log(`Authenticating for WebID: ${webId}`)
   } else { 
     let entries = getAllConfigEntries();
     let values: Record<string, string> = {}
-    let activeSession = entries[webId]?.session
     values["cancel"] = `${chalk.redBright("Cancel operation")}`
     values["new"] = `${chalk.blueBright("Authenticate using new WebID")}`
     values["clear"] = `${chalk.red("Clear current authentication option")}`
-    for (let webId of Object.keys(entries)) { 
-      values[webId] =
-  `${colorWebID(webId)} ${entries[webId].hasToken ? `- ${chalk("auth token")}` : ""} ${!!activeSession && !! activeSession?.expirationDate && activeSession.expirationDate > new Date() ? `- ${chalk("active session")}` : ""}`
+    for (let entryWebId of Object.keys(entries)) { 
+      let activeSession = entries[entryWebId]?.session
+      values[entryWebId] =
+  `${colorWebID(entryWebId)} ${entries[entryWebId].hasToken ? `- ${chalk.bold("auth token")}` : ""} ${!!activeSession && !! activeSession?.expirationDate && activeSession.expirationDate > new Date() ? `- ${chalk.bold("active session")}` : ""} ${entries[entryWebId].storages?.length ? `- ${chalk.bold(entries[entryWebId].storages.length + " storage(s)")}` : ""}`
     }
 
     let selected = await new Promise((resolve, reject) => { 
@@ -230,28 +238,81 @@ async function setAuthenticationOption(options: any) {
       }).catch(e => reject(e));
     })
 
-    let selectedWebID = undefined;
+    webId = undefined;
     // Add a new webId to the config
     if (selected === "new") {
       let answers = await inquirer.prompt([{ type: 'input', name: 'webid',  message: 'Use a new WebID to authenticate'}])
       let newWebId = answers.webid;
       await setConfigCurrentWebID(newWebId)
       addConfigEmtpyEntry(newWebId)
-      selectedWebID = newWebId
+      webId = newWebId
     } else if (selected === "cancel") {
        // We just return from the function
-      return;
+       return;
     } else if (selected === "clear") {
        // We clear the currently authenticated session
-      clearAuthenticationOption()
-      console.log(`Cleared authenticated WebID.`)
-      return;
+       clearAuthenticationOption()
+       console.log(`Cleared authenticated WebID.`)
+       return;
     } else { 
       // We set the selected WebID as the currently used one
       await setConfigCurrentWebID(selected as unknown as string)
-      selectedWebID = selected
+      webId = selected
     }
-    console.log(`Authenticating for WebID: ${selectedWebID}`)
+  }
+
+  if (webId) {
+    console.log(`Authenticating for WebID: ${webId}`)
+    await loginAndTrackSession(webId, options)
+  }
+}
+
+/**
+ * Authenticate for a WebID, make sure the session is live, and track the
+ * storage root(s) of the WebID so `~` paths can be expanded later on.
+ */
+async function loginAndTrackSession(webId: string, options: any) {
+  let idp = await getWebIDIdentityProvider(webId)
+  if (!idp) throw new Error(`Could not find an OIDC issuer for WebID: ${webId}`)
+  idp = idp.endsWith('/') ? idp : idp + '/';
+
+  // Prefer a client credentials token when one is configured: it allows
+  // logging in without user interaction. Otherwise fall back to the
+  // interactive browser flow (which reuses a live stored session if possible).
+  let auth = getConfigCurrentToken() ? 'token' : 'interactive'
+  let programOpts = addEnvOptions(options || {})
+  let authenticationInfo = await authenticate({ ...programOpts, auth, idp })
+
+  if (!authenticationInfo?.webId)
+    throw new Error('Authentication did not result in an authenticated session.')
+
+  // Discover (or reuse tracked) storage roots and verify we can read them.
+  let storages = (await getTrackedStorageRoots(authenticationInfo.webId, authenticationInfo.fetch)) || []
+  let verifiedStorages: string[] = []
+  for (let storage of storages) {
+    try {
+      let res = await authenticationInfo.fetch(storage, { method: 'HEAD' })
+      if (res.ok) verifiedStorages.push(storage)
+      else writeErrorString(`Could not access storage root ${storage}`, new Error(`HTTP ${res.status} ${res.statusText}`), options)
+    } catch (e) {
+      writeErrorString(`Could not access storage root ${storage}`, e, options)
+    }
+  }
+
+  let session = getConfigCurrentSession()
+  let sessionInfo = session && session.expirationDate
+    ? `session valid until ${new Date(session.expirationDate).toISOString()}`
+    : 'no stored session (client credentials token in use)'
+
+  console.log(`
+Authenticated as ${colorWebID(authenticationInfo.webId)}
+  Identity provider: ${idp}
+  ${sessionInfo}`)
+  if (verifiedStorages.length > 0) {
+    console.log(`  Storage roots (use ~ as shorthand for the first):`)
+    for (let storage of verifiedStorages) console.log(`    - ${storage}`)
+  } else {
+    console.log(`  No accessible storage roots found for this WebID.`)
   }
 }
 

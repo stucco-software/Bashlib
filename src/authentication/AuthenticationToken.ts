@@ -1,6 +1,8 @@
 import { KeyPair } from '@inrupt/solid-client-authn-core';
-import { createDpopHeader, generateDpopKeyPair, buildAuthenticatedFetch } from '@inrupt/solid-client-authn-core';
+import { createDpopHeader, generateDpopKeyPair } from '@inrupt/solid-client-authn-core';
+import { buildDpopAuthenticatedFetch } from '../utils/dpopFetch';
 import { decodeIdToken, getOIDCConfig, readSessionTokenInfo, storeSessionTokenInfo, writeErrorString } from '../utils/authenticationUtils';
+import { isSessionTokenAlive } from '../utils/storages';
 import { getConfigCurrentToken, getConfigCurrentSession } from '../utils/configoptions';
 import { IClientCredentialsTokenAuthOptions, SessionInfo } from './CreateFetch';
 import BashlibError from '../utils/errors/BashlibError';
@@ -19,7 +21,7 @@ export async function authenticateWithTokenFromJavascript(token: { id: string, s
 
   let { accessToken, expirationDate, webId } = await requestAccessToken(id, secret, dpopKey, { idp });
 
-  let fetch = await buildAuthenticatedFetch(accessToken, { dpopKey });
+  let fetch = await buildDpopAuthenticatedFetch(accessToken, dpopKey);
 
   return { fetch, webId }
 }
@@ -36,21 +38,22 @@ export async function authenticateToken(options?: IClientCredentialsTokenAuthOpt
         var tokenTimeLeftInSeconds = (sessionInfo.expirationDate.getTime() - new Date().getTime()) / 1000;
         if (tokenTimeLeftInSeconds > 60) {
           // Only reuse previous session tokens if we have enough time to work with, else continue to create a new access token.
-          let fetch = await buildAuthenticatedFetch(sessionInfo.accessToken, { dpopKey: sessionInfo.dpopKey });
-          let webId = sessionInfo.webId;
-          return { fetch, webId }
+          let fetch = await buildDpopAuthenticatedFetch(sessionInfo.accessToken, sessionInfo.dpopKey);
+          // Verify the stored token is still accepted before reusing it.
+          if (await isSessionTokenAlive(fetch, sessionInfo.idp, sessionInfo.webId, options?.logger)) {
+            let webId = sessionInfo.webId;
+            return { fetch, webId }
+          }
+          // Stale token: drop the stored session and request a new one below.
         }
       }
     }
   } catch (e) {
     if (options?.verbose) writeErrorString('Could not load existing session', e, options);
   }
-  try {
-    return createFetchWithNewAccessToken(options);
-  } catch (e) {
-    if (options?.verbose) writeErrorString('Could not create new session', e, options);
-    return { fetch: crossfetch }
-  }
+  // A failed login must not silently continue unauthenticated: writes would
+  // then fail with confusing 401s. Let the caller report the failure.
+  return createFetchWithNewAccessToken(options);
 }
 
 async function createFetchWithNewAccessToken(options?: IClientCredentialsTokenAuthOptions): Promise<SessionInfo> {
@@ -71,7 +74,7 @@ async function createFetchWithNewAccessToken(options?: IClientCredentialsTokenAu
   let { accessToken, expirationDate, webId } = await requestAccessToken(id, secret, dpopKey, options);
 
   await storeSessionTokenInfo(accessToken, dpopKey, expirationDate, webId, idp)
-  let fetch = await buildAuthenticatedFetch(accessToken, { dpopKey });
+  let fetch = await buildDpopAuthenticatedFetch(accessToken, dpopKey);
 
   return { fetch, webId }
 }
